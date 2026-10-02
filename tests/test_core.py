@@ -3,7 +3,7 @@ import unittest
 
 import torch
 
-from tgkd.answers import (answer_confidence, expected_calibration_error, extract_answer, is_correct,
+from tgkd.answers import (answer_confidence, expected_calibration_error, has_final_format, extract_answer, is_correct,
                           span_token_indices)
 from tgkd.data import Example, clean_solution, collate, gold_answer, select_train_rows
 from tgkd.gates import entropy_from_logits, sample_gate, tau_for_median_gate, token_gate
@@ -88,6 +88,11 @@ class AnswerTests(unittest.TestCase):
         self.assertEqual(extract_answer("so 5 apples\n#### 1,234.")[0], "1234")
         self.assertEqual(extract_answer("total is 7 then 9")[0], "9")
         self.assertEqual(extract_answer("no numbers")[0], None)
+        self.assertEqual(extract_answer("so 3 then\n\\[\n\\boxed{600,000}\n\\]")[0], "600000")
+        self.assertEqual(extract_answer("\\boxed{2} wait \\boxed{7}")[0], "7")
+        self.assertEqual(extract_answer(r"answer \boxed{7}. Check: 7 + 1 = 8")[0], "7")
+        self.assertTrue(has_final_format(r"so \boxed{7}"))
+        self.assertFalse(has_final_format("so 7"))
 
     def test_is_correct_numeric(self):
         self.assertTrue(is_correct("18.0", "18"))

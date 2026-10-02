@@ -9,12 +9,19 @@ _NUM = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 
 
 def extract_answer(text: str) -> tuple[str | None, tuple[int, int] | None]:
-    """Return (normalised number, char span). Prefer the first number after the
-    first '####'; fall back to the last number in the text."""
+    """Return (normalised number, char span). Priority: first number after the
+    first '####'; else first number inside the last '\boxed{...}' (the teacher's
+    native style); else the last number in the text."""
     idx = text.find("####")
     if idx >= 0:
         m = _NUM.search(text, idx + 4)
         if m:
+            return _norm(m.group()), m.span()
+    idx = text.rfind(r"\boxed{")
+    if idx >= 0:
+        m = _NUM.search(text, idx + 7)
+        close = text.find("}", idx)
+        if m and (close < 0 or m.start() < close):
             return _norm(m.group()), m.span()
     matches = list(_NUM.finditer(text))
     if not matches:
@@ -30,6 +37,10 @@ def _norm(s: str) -> str:
     except ValueError:
         return s
     return str(int(v)) if v == int(v) else str(v)
+
+
+def has_final_format(text: str) -> bool:
+    return "####" in text or r"\boxed{" in text
 
 
 def is_correct(pred: str | None, gold: str) -> bool:

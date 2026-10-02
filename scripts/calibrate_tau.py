@@ -29,12 +29,16 @@ def main():
     p.add_argument("--n", type=int, default=64)
     p.add_argument("--device", default="cuda")
     p.add_argument("--output", type=Path, default=Path("outputs/calibration/tau.json"))
+    p.add_argument("--data-file", type=Path, help="jsonl of held-out question/answer (teacher solutions)")
     args = p.parse_args()
 
     tok = AutoTokenizer.from_pretrained(args.tokenizer)
     vocab = len(tok)
-    rows = select_train_rows(list(load_dataset("openai/gsm8k", "main", split="train")), 10**9, args.data_seed)
-    calib = rows[args.train_size:args.train_size + args.n]  # disjoint from the training subset
+    if args.data_file:
+        calib = [json.loads(x) for x in args.data_file.read_text(encoding="utf-8").splitlines() if x.strip()][: args.n]
+    else:
+        rows = select_train_rows(list(load_dataset("openai/gsm8k", "main", split="train")), 10**9, args.data_seed)
+        calib = rows[args.train_size:args.train_size + args.n]  # disjoint from the training subset
     dtype = torch.bfloat16 if args.device == "cuda" else torch.float32
     model = AutoModelForCausalLM.from_pretrained(args.teacher, torch_dtype=dtype).to(args.device).eval()
     ents, per_sample = [], []

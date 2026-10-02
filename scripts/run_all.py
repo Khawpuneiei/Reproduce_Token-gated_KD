@@ -39,9 +39,16 @@ def run(cmd: list[str], log: Path, check: bool = True) -> bool:
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--root", type=Path, default=Path("outputs/runs"))
-    p.add_argument("--tau-file", type=Path, default=Path("outputs/calibration/tau.json"))
+    p.add_argument("--root", type=Path, default=Path("outputs/runs_instruct"))
+    p.add_argument("--report-dir", type=Path, default=Path("results"))
+    p.add_argument("--tau-file", type=Path, default=Path("outputs/calibration/tau_tgen.json"))
     p.add_argument("--train-size", type=int, default=2000)
+    p.add_argument("--train-file", type=Path, default=Path("outputs/teacher_data/teacher_train.jsonl"),
+                   help="empty string = GSM8K reference solutions")
+    p.add_argument("--max-new-tokens", type=int, default=512)
+    p.add_argument("--student", default="Qwen/Qwen2.5-0.5B-Instruct")
+    p.add_argument("--seed", type=int, default=0, help="LoRA init / shuffling seed (data subset is fixed)")
+    p.add_argument("--skip-reference", action="store_true", help="do not evaluate the base student and teacher")
     p.add_argument("--arms", nargs="+", default=["kd", "token_gate", "sample_gate", "taid"])
     p.add_argument("--extra-arms", nargs="*", default=["token_gate_literal", "sft"],
                    help="run after the core report only if the clock is before --extra-deadline")
@@ -67,9 +74,11 @@ def main():
     tau, tau_sample = calib["tau_median_half"], calib["tau_sample_median_half"]
     log = args.root / "run_all.log"
     args.root.mkdir(parents=True, exist_ok=True)
+    data = ["--train-file", str(args.train_file)] if str(args.train_file) not in ("", ".") else []
     common = ["--train-size", str(args.train_size), "--micro-batch", str(args.micro_batch),
-              "--grad-accum", str(args.grad_accum)]
-    eval_extra = ["--limit", str(args.eval_limit)] if args.eval_limit else []
+              "--grad-accum", str(args.grad_accum), "--student", args.student, "--seed", str(args.seed), *data]
+    eval_extra = ["--max-new-tokens", str(args.max_new_tokens)]
+    eval_extra += ["--limit", str(args.eval_limit)] if args.eval_limit else []
     arm_flags = {
         "kd": ["--arm", "kd"],
         "token_gate": ["--arm", "token_gate", "--tau", f"{tau:.6f}", "--g-min", "0.1"],
@@ -84,27 +93,29 @@ def main():
             cmd = [py, "-m", "scripts.train_kd", *arm_flags[name], *common, "--output-dir", str(out)]
             if not run(cmd, log, check=False):
                 # OOM fallback: same effective batch (16), smaller micro-batch + activation checkpointing
-                cmd = [py, "-m", "scripts.train_kd", *arm_flags[name], "--train-size", str(args.train_size),
+                cmd = [py, "-m", "scripts.train_kd", *arm_flags[name], "--train-size", str(args.train_size), *data,
+                       "--student", args.student, "--seed", str(args.seed),
                        "--micro-batch", "2", "--grad-accum", "8", "--gradient-checkpointing",
                        "--output-dir", str(out)]
                 run(cmd, log)
         if not (out / "eval" / "eval_summary.json").exists():
-            run([py, "-m", "scripts.evaluate", "--adapter", str(out / "adapter"), "--output-dir",
+            run([py, "-m", "scripts.evaluate", "--model", args.student, "--adapter", str(out / "adapter"), "--output-dir",
                  str(out / "eval"), *eval_extra], log)
 
     for name in args.arms:
         train_and_eval(name)
-    for name, model in (("base_student", "Qwen/Qwen2.5-0.5B"), ("teacher", "Qwen/Qwen2.5-1.5B-Instruct")):
+    refs = () if args.skip_reference else (("base_student", args.student), ("teacher", "Qwen/Qwen2.5-1.5B-Instruct"))
+    for name, model in refs:
         out = args.root / name / "eval"
         if not (out / "eval_summary.json").exists():
             run([py, "-m", "scripts.evaluate", "--model", model, "--output-dir", str(out), *eval_extra], log)
-    run([py, "-m", "scripts.report", "--root", str(args.root)], log)
+    run([py, "-m", "scripts.report", "--root", str(args.root), "--out", str(args.report_dir)], log)
     for name in args.extra_arms:
         if time.strftime("%H:%M") >= args.extra_deadline and time.strftime("%H:%M") < "12:00":
             print(f"[{time.strftime('%H:%M:%S')}] past {args.extra_deadline}; skipping extra arm {name}", flush=True)
             continue
         train_and_eval(name)
-        run([py, "-m", "scripts.report", "--root", str(args.root)], log)
+        run([py, "-m", "scripts.report", "--root", str(args.root), "--out", str(args.report_dir)], log)
     print("all done", flush=True)
 
 

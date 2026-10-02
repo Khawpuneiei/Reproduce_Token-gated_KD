@@ -6,12 +6,13 @@ import argparse
 import json
 import math
 import random
+import sys
 from pathlib import Path
 
 LABELS = {
-    "base_student": "Base student (no training)",
+    "base_student": "Student Qwen2.5-0.5B-Instruct (no training)",
     "teacher": "Teacher Qwen2.5-1.5B-Instruct",
-    "sft": "SFT on GSM8K solutions",
+    "sft": "SFT on teacher solutions (sequence-level KD)",
     "kd": "Vanilla KL-KD (ungated)",
     "token_gate": "Token-gated KD (sharp tau)",
     "sample_gate": "Sample-gated KD (sharp tau)",
@@ -49,6 +50,7 @@ def main():
     ap.add_argument("--root", type=Path, default=Path("outputs/runs"))
     ap.add_argument("--out", type=Path, default=Path("results"))
     args = ap.parse_args()
+    sys.stdout.reconfigure(encoding="utf-8")
     args.out.mkdir(parents=True, exist_ok=True)
 
     rows = []
@@ -59,6 +61,8 @@ def main():
             continue
         tr = load(args.root / name / "training_summary.json") or {}
         row = dict(arm=name, label=LABELS[name], accuracy=ev["accuracy"], ece=ev["ece"], brier=ev["brier"],
+                   ece_seq=ev.get("ece_seq"), ece_min=ev.get("ece_min"), truncated_rate=ev.get("truncated_rate"),
+                   mean_gen_tokens=ev.get("mean_gen_tokens"),
                    mean_confidence=ev["mean_confidence"], format_rate=ev["format_rate"], n=ev["n"],
                    eval_minutes=ev["eval_seconds"] / 60, eval_vram_gb=ev["peak_vram_gb"],
                    gating_function=tr.get("gating_function"), gate_level=tr.get("gate_level"),
@@ -73,14 +77,17 @@ def main():
             row["acc_gap_vs_kd"] = ev["accuracy"] - kd["accuracy"]
             row["acc_gap_ci95"] = paired_bootstrap(corr, kd_corr)
             row["ece_gap_vs_kd"] = ev["ece"] - kd["ece"]
+            if ev.get("ece_seq") is not None and kd.get("ece_seq") is not None:
+                row["ece_seq_gap_vs_kd"] = ev["ece_seq"] - kd["ece_seq"]
+                row["ece_min_gap_vs_kd"] = ev["ece_min"] - kd["ece_min"]
         rows.append(row)
     (args.out / "results.json").write_text(json.dumps(rows, indent=2))
 
     def f(v, fmt):
         return "—" if v is None or (isinstance(v, float) and math.isnan(v)) else format(v, fmt)
 
-    lines = ["| Arm | Gate | Acc | ΔAcc vs KD (95% CI) | ECE ↓ | ΔECE vs KD | Brier | Teacher tokens (fwd / effective) | Train min | Train VRAM GB |",
-             "|---|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| Arm | Gate | Acc | ΔAcc vs KD (95% CI) | ECE ans ↓ | ECE seq ↓ | ECE min-tok ↓ | ΔECE seq vs KD | Brier ans | Trunc | Teacher tokens (fwd / effective) | Train min | Train VRAM GB |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         ci = r.get("acc_gap_ci95")
         gap = f"{r['acc_gap_vs_kd']:+.3f} [{ci[0]:+.3f}, {ci[1]:+.3f}]" if ci else "—"
@@ -88,7 +95,8 @@ def main():
         toks = (f"{r['teacher_fwd_tokens']:,} / {r['effective_teacher_tokens']:,.0f}"
                 if r["teacher_fwd_tokens"] else "—")
         lines.append(f"| {r['label']} | {gate} | {r['accuracy']:.3f} | {gap} | {r['ece']:.3f} | "
-                     f"{f(r.get('ece_gap_vs_kd'), '+.3f')} | {r['brier']:.3f} | {toks} | "
+                     f"{f(r.get('ece_seq'), '.3f')} | {f(r.get('ece_min'), '.3f')} | "
+                     f"{f(r.get('ece_seq_gap_vs_kd'), '+.3f')} | {r['brier']:.3f} | {f(r.get('truncated_rate'), '.1%')} | {toks} | "
                      f"{f(r['train_minutes'], '.1f')} | {f(r['train_vram_gb'], '.2f')} |")
     (args.out / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
@@ -102,7 +110,7 @@ def main():
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
     for name in ORDER:
         lp = args.root / name / "train_log.jsonl"
-        if not lp.exists():
+        if name == "sft" or not lp.exists():  # SFT has no teacher KL or gate
             continue
         recs = [json.loads(x) for x in lp.read_text().splitlines() if x.strip()]
         steps = [r["step"] for r in recs]

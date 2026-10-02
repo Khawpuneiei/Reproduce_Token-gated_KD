@@ -1,0 +1,50 @@
+[
+  {
+    "arm": "kd",
+    "seeds": 2,
+    "accuracy_mean": 0.46929492039423804,
+    "ece_mean": 0.5079269696167752,
+    "ece_seq_mean": 0.4199206061378663,
+    "ece_min_mean": 0.19790576505090238
+  },
+  {
+    "arm": "token_gate",
+    "seeds": 2,
+    "accuracy_mean": 0.4473085670962851,
+    "ece_mean": 0.5333579099453287,
+    "ece_seq_mean": 0.4459337126600119,
+    "ece_min_mean": 0.17475094871019423
+  },
+  {
+    "arm": "sample_gate",
+    "seeds": 2,
+    "accuracy_mean": 0.4742228961334344,
+    "ece_mean": 0.5041226359059809,
+    "ece_seq_mean": 0.4163032906386739,
+    "ece_min_mean": 0.20184168527173293
+  },
+  {
+    "arm": "taid",
+    "seeds": 2,
+    "accuracy_mean": 0.4522365428354814,
+    "ece_mean": 0.5208328928427233,
+    "ece_seq_mean": 0.44025016297990416,
+    "ece_min_mean": 0.1776765691540973
+  },
+  {
+    "arm": "token_gate_literal",
+    "seeds": 1,
+    "accuracy_mean": 0.45943896891584535,
+    "ece_mean": 0.5139139463603308,
+    "ece_seq_mean": 0.43077155729687977,
+    "ece_min_mean": 0.18784417328102587
+  },
+  {
+    "arm": "sft",
+    "seeds": 1,
+    "accuracy_mean": 0.47308567096285065,
+    "ece_mean": 0.5113058496434572,
+    "ece_seq_mean": 0.46208634663217324,
+    "ece_min_mean": 0.12334933841487392
+  }
+]

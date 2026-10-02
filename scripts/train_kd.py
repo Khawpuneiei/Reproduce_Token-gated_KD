@@ -35,12 +35,13 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--arm", choices=ARMS, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
-    p.add_argument("--student", default="Qwen/Qwen2.5-0.5B")
+    p.add_argument("--student", default="Qwen/Qwen2.5-0.5B-Instruct")
     p.add_argument("--teacher", default="Qwen/Qwen2.5-1.5B-Instruct")
-    p.add_argument("--train-size", type=int, default=3000)
+    p.add_argument("--train-size", type=int, default=2000)
+    p.add_argument("--train-file", type=Path, help="jsonl with question/answer (teacher solutions); default GSM8K references")
     p.add_argument("--data-seed", type=int, default=0)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--max-length", type=int, default=512)
+    p.add_argument("--max-length", type=int, default=768)
     p.add_argument("--micro-batch", type=int, default=4)
     p.add_argument("--grad-accum", type=int, default=4)
     p.add_argument("--epochs", type=int, default=1)
@@ -75,8 +76,12 @@ def main():
     tok = AutoTokenizer.from_pretrained(args.student)
     vocab = len(tok)  # real tokens; padded embedding rows are excluded from every softmax
 
-    rows = list(load_dataset("openai/gsm8k", "main", split="train"))
-    rows = select_train_rows(rows, args.train_size, args.data_seed)
+    if args.train_file:
+        rows = [json.loads(x) for x in args.train_file.read_text(encoding="utf-8").splitlines() if x.strip()]
+        rows = rows[: args.train_size]  # already in the seeded order
+    else:
+        rows = select_train_rows(list(load_dataset("openai/gsm8k", "main", split="train")), args.train_size,
+                                 args.data_seed)
     examples = [encode_example(tok, r["question"], r["answer"], args.max_length) for r in rows]
     batches = [examples[i:i + args.micro_batch] for i in range(0, len(examples), args.micro_batch)]
     total_steps = math.ceil(len(batches) * args.epochs / args.grad_accum)
@@ -220,7 +225,7 @@ def main():
                                     if args.arm in ("token_gate", "sample_gate") else None),
                    gate_level={"token_gate": "token", "sample_gate": "sample"}.get(args.arm),
                    final_taid_t=taid.t if taid else None, **counters)
-    (args.output_dir / "training_summary.json").write_text(json.dumps(summary, indent=2))
+    (args.output_dir / "training_summary.json").write_text(json.dumps(summary, indent=2, default=str))
     print(json.dumps({k: summary[k] for k in ("steps", "train_seconds", "peak_vram_gb")}))
 
 

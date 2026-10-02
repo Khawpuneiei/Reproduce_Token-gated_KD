@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import torch
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer, LogitsProcessor, LogitsProcessorList
 
-from tgkd.answers import (answer_confidence, brier, expected_calibration_error, extract_answer, is_correct,
+from tgkd.answers import (answer_confidence, has_final_format, brier, expected_calibration_error, extract_answer, is_correct,
                           span_token_indices)
 from tgkd.data import gold_answer, prompt_text
 
@@ -32,12 +33,12 @@ class RecordGreedyLogprob(LogitsProcessor):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--model", default="Qwen/Qwen2.5-0.5B")
+    p.add_argument("--model", default="Qwen/Qwen2.5-0.5B-Instruct")
     p.add_argument("--adapter", type=Path)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--batch-size", type=int, default=32)
-    p.add_argument("--max-new-tokens", type=int, default=320)
+    p.add_argument("--max-new-tokens", type=int, default=512)
     p.add_argument("--device", default="cuda")
     args = p.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -79,8 +80,10 @@ def main():
             pred, span = extract_answer(text)
             conf = answer_confidence(lp[:n], span_token_indices(pieces, span)) if span else 0.0
             gold = gold_answer(r["answer"])
+            seq_lp = lp[:n] if n else [float("-inf")]
             records.append(dict(question=r["question"], gold=gold, pred=pred, correct=is_correct(pred, gold),
-                                confidence=conf, has_hash=("####" in text), truncated=(n == len(ids)),
+                                confidence=conf, seq_confidence=math.exp(sum(seq_lp) / len(seq_lp)),
+                                min_token_prob=math.exp(min(seq_lp)), has_hash=has_final_format(text), truncated=(n == len(ids)),
                                 gen_tokens=n, completion=text))
         print(f"  {len(records)}/{len(rows)} acc={sum(x['correct'] for x in records) / len(records):.3f}",
               flush=True)
@@ -90,6 +93,12 @@ def main():
     summary = dict(model=args.model, adapter=str(args.adapter) if args.adapter else None, n=len(records),
                    accuracy=sum(corr) / len(corr), ece=expected_calibration_error(conf, corr),
                    brier=brier(conf, corr), mean_confidence=sum(conf) / len(conf),
+                   ece_seq=expected_calibration_error([x["seq_confidence"] for x in records], corr),
+                   brier_seq=brier([x["seq_confidence"] for x in records], corr),
+                   mean_seq_confidence=sum(x["seq_confidence"] for x in records) / len(records),
+                   ece_min=expected_calibration_error([x["min_token_prob"] for x in records], corr),
+                   brier_min=brier([x["min_token_prob"] for x in records], corr),
+                   mean_min_token_prob=sum(x["min_token_prob"] for x in records) / len(records),
                    format_rate=sum(x["has_hash"] for x in records) / len(records),
                    truncated_rate=sum(x["truncated"] for x in records) / len(records),
                    mean_gen_tokens=sum(x["gen_tokens"] for x in records) / len(records),

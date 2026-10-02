@@ -1,0 +1,10 @@
+{
+  "teacher": "Qwen/Qwen2.5-1.5B-Instruct",
+  "seconds": 2411.7011976242065,
+  "teacher_generated_tokens": 768969,
+  "train_kept": 1619,
+  "train_prompts": 2800,
+  "calib_kept": 58,
+  "calib_prompts": 100,
+  "max_new_tokens": 512
+}

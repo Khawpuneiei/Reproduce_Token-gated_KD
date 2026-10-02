@@ -48,4 +48,19 @@ first. `run_all --wait-for-gpu 7000` waits for 3 straight minutes of ≥7 GB fre
 started on its own when the GPU was released. Because of that wait, the training set was cut from
 3,000 to 2,000 examples and the core arms from 6 to 4.
 
-Measured actuals are recorded in the README results section.
+## Actuals
+
+| | Planned | Measured |
+|---|---|---|
+| KD throughput | 200–250 tok/s | **1,400–1,550 tok/s** (teacher forward included) |
+| Train time / arm | ~45 min | **~7 min** (1,619 teacher solutions, 102 steps) |
+| Peak train VRAM | <7 GB | 5.64 GB (micro 2 × accum 8 + gradient checkpointing; micro 4 OOMs at the 7.36 GB cap) |
+| Eval / model (1,319 q, 512 new tokens) | ~12 min | 9–10 min student, 18 min teacher |
+| Final pipeline GPU time | ~4 h | **3.8 h** (1.1 train, 2.0 eval, 0.7 teacher generation) |
+| Wall clock | ≤12 h | 9.9 h (20:32 → 06:24), including ~3.5 h waiting for another GPU job and 10 min of laptop sleep |
+
+Training was about 5× faster than planned, which bought the time to (a) fix the two setup problems
+found mid-run (reference-text style mismatch, base-model `<|im_end|>` row) and (b) add a second
+seed for the core arms and the two optional arms. The final plan replaced "3,000 or 2,000 reference
+solutions" with 1,619 teacher-generated, answer-verified solutions and the Instruct student.
+
