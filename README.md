@@ -1,4 +1,4 @@
-# Reproduce 3: TAID and GRACE-style token-gated KD on GSM8K
+# Reproduce: TAID and GRACE-style token-gated KD on GSM8K
 
 A single-GPU (8 GB laptop) reproduction comparing **ungated KL distillation**, a **GRACE-style
 teacher-entropy gate** at token and sample level, and **TAID** (Shing et al., 2025,
