@@ -30,6 +30,7 @@ def main():
     p.add_argument("--device", default="cuda")
     p.add_argument("--output", type=Path, default=Path("outputs/calibration/tau.json"))
     p.add_argument("--data-file", type=Path, help="jsonl of held-out question/answer (teacher solutions)")
+    p.add_argument("--dump", type=Path, help="also save raw token / per-sample entropies (json) for figures")
     args = p.parse_args()
 
     tok = AutoTokenizer.from_pretrained(args.tokenizer)
@@ -70,6 +71,11 @@ def main():
                                              max=float(token_gate(ps, vocab, tau, 0.1).max())),
                sample_gate_at_sample_tau=dict(min=float(token_gate(ps, vocab, tau_sample, 0.1).min()),
                                               max=float(token_gate(ps, vocab, tau_sample, 0.1).max())))
+    if args.dump:
+        args.dump.parent.mkdir(parents=True, exist_ok=True)
+        args.dump.write_text(json.dumps({"token_entropy": [round(float(x), 6) for x in ents],
+                                         "sample_mean_entropy": [round(x, 6) for x in per_sample],
+                                         "log_vocab": math.log(vocab), "tau_token": tau, "tau_sample": tau_sample}))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(out, indent=2))
     print(json.dumps(out, indent=2))
